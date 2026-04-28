@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Info Scan — v10.9</title>
+<title>Info Scan — v10.10</title>
 <style>
   :root{
     --rw-red:#D20014;
@@ -35,13 +35,27 @@
   }
   #torchBtn.visible{ display:block; }
   #torchBtn.on{ background:rgba(255,200,0,0.9); color:#000; }
-  /* ── FIX 25 (v10.9): decoder-badge der viser hvilken engine der er aktiv ── */
   #engineBadge{
     position:absolute; top:8px; left:8px; padding:4px 8px;
     border-radius:6px; background:rgba(0,0,0,0.55); color:#fff;
     font-size:11px; font-weight:700; display:none; z-index:2;
   }
   #engineBadge.visible{ display:block; }
+  /* ── FIX 35 (v10.10): fokus-status indikator nederst i kamera-feedet ── */
+  #focusStatus{
+    position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    padding:4px 10px; border-radius:6px; background:rgba(0,0,0,0.7); color:#fff;
+    font-size:11px; font-weight:700; display:none; z-index:2; white-space:nowrap;
+  }
+  #focusStatus.visible{ display:block; }
+  /* ── FIX 36 (v10.10): manuel fokus-slider — kun synlig hvis hardwaren understøtter det ── */
+  .focusControls{ display:none; margin-top:10px; }
+  .focusControls.visible{ display:block; }
+  .focusControls label{ display:block; font-size:13px; font-weight:700; margin-bottom:4px; color:#374151; }
+  .focusControls input[type=range]{ width:100%; height:32px; }
+  .focusControls .focusBtns{ display:flex; gap:6px; margin-top:6px; }
+  .focusControls button{ flex:1; height:36px; border-radius:8px; border:1px solid #d1d5db; background:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+  .focusControls button.active{ background:#0f172a; color:#fff; border-color:#0f172a; }
   .btn{ width:100%; height:56px; margin-top:14px; border-radius:10px; border:0; background:#0f172a; color:#fff; font-weight:900; font-size:18px; cursor:pointer; }
   .box{ border:2px solid var(--black); border-radius:6px; padding:10px 12px; margin-bottom:12px; background:white; }
   .catTitle{ font-size:17px; font-weight:900; margin-bottom:8px; }
@@ -58,7 +72,7 @@
 <body>
 
 <div class="topbar">
-  <div class="topTitle">Info Scan — v10.9</div>
+  <div class="topTitle">Info Scan — v10.10</div>
   <img class="logo" src="logo.png" alt="ROCKWOOL logo" onerror="this.style.display='none'"/>
 </div>
 
@@ -69,8 +83,19 @@
     <div id="engineBadge"></div>
     <button id="torchBtn" title="Lommelygte">💡</button>
     <div id="scanFrame"></div>
+    <div id="focusStatus"></div>
   </div>
   <button id="scanBtn" class="btn">NY SCANNING</button>
+  <!-- ── FIX 37 (v10.10): manuel fokus-kontrol UI ── -->
+  <div id="focusControls" class="focusControls">
+    <label id="focusLabel">Manuel fokus</label>
+    <input type="range" id="focusSlider" min="0" max="100" value="50"/>
+    <div class="focusBtns">
+      <button id="focusAutoBtn" class="active" type="button">Auto-fokus</button>
+      <button id="focusSweepBtn" type="button">Auto-sweep</button>
+      <button id="focusManualBtn" type="button">Manuel</button>
+    </div>
+  </div>
 </div>
 
 <div class="card" style="position:relative;">
@@ -87,21 +112,30 @@ const cameraWrap = document.getElementById('cameraWrap');
 const scanFrame = document.getElementById('scanFrame');
 const torchBtn = document.getElementById('torchBtn');
 const engineBadge = document.getElementById('engineBadge');
+const focusStatus = document.getElementById('focusStatus');
+const focusControls = document.getElementById('focusControls');
+const focusSlider = document.getElementById('focusSlider');
+const focusLabel = document.getElementById('focusLabel');
+const focusAutoBtn = document.getElementById('focusAutoBtn');
+const focusSweepBtn = document.getElementById('focusSweepBtn');
+const focusManualBtn = document.getElementById('focusManualBtn');
 
 let videoEl = null;
 let canvas = null;
 let ctx = null;
 let stream = null;
 let raf = null;
-let focusInterval = null;
 let currentTrack = null;
 let torchOn = false;
 
+/* ── FIX 38 (v10.10): fokus-state holdes globalt ── */
+let focusMode = 'auto'; /* 'auto' | 'sweep' | 'manual' */
+let focusCaps = null;
+let sweepInterval = null;
+let sweepStep = 0;
+
 const isAndroid = /Android/i.test(navigator.userAgent);
 
-/* ── FIX 26 (v10.9): BarcodeDetector — native, hardware-accelereret QR-decoder ──
-   Tilgængelig i Android Chrome 88+, Edge, Samsung Internet.
-   Dramatisk bedre end jsQR til at håndtere sløring og lav kontrast. */
 let barcodeDetector = null;
 let useNative = false;
 
@@ -120,10 +154,15 @@ async function initBarcodeDetector(){
   return false;
 }
 
-/* ── FIX 27 (v10.9): preprocessing-canvas til kontrast-boost ── */
 let preCanvas = null, preCtx = null;
 function ensurePreCanvas(){
   if(!preCanvas){ preCanvas = document.createElement('canvas'); preCtx = preCanvas.getContext('2d', { willReadFrequently: true }); }
+}
+
+function setFocusStatus(msg){
+  if(!msg){ focusStatus.classList.remove('visible'); focusStatus.textContent=''; return; }
+  focusStatus.textContent = msg;
+  focusStatus.classList.add('visible');
 }
 
 function esc(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
@@ -299,23 +338,6 @@ function loadJsQR(){
   });
 }
 
-function attachTapToFocus(track){
-  if(!videoEl || !track) return;
-  videoEl.addEventListener('click', async () => {
-    try{
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if(caps.focusMode && caps.focusMode.includes('single-shot')){
-        await track.applyConstraints({ advanced: [{ focusMode:'single-shot' }] });
-        setTimeout(() => {
-          if(caps.focusMode && caps.focusMode.includes('continuous')){
-            track.applyConstraints({ advanced: [{ focusMode:'continuous' }] }).catch(()=>{});
-          }
-        }, 800);
-      }
-    }catch(e){}
-  });
-}
-
 async function toggleTorch(){
   if(!currentTrack) return;
   try{
@@ -328,6 +350,143 @@ async function toggleTorch(){
   }
 }
 torchBtn.addEventListener('click', toggleTorch);
+
+/* ──────────────────────────────────────────────────────────────
+   FIX 39 (v10.10): NY FOKUS-STRATEGI
+   Tre tilstande, brugeren kan vælge mellem:
+   - Auto: continuous autofokus (kameraets default)
+   - Sweep: vi cykler manuelt gennem fokus-afstande hvert 600ms
+   - Manuel: slider styrer fokus-afstanden
+   ────────────────────────────────────────────────────────────── */
+function stopSweep(){
+  if(sweepInterval){ clearInterval(sweepInterval); sweepInterval = null; }
+}
+
+async function applyAutoFocus(){
+  stopSweep();
+  if(!currentTrack || !focusCaps) return;
+  try{
+    if(focusCaps.focusMode && focusCaps.focusMode.includes('continuous')){
+      await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      setFocusStatus('Auto-fokus aktiv');
+      setTimeout(() => setFocusStatus(''), 1500);
+    }
+  }catch(e){}
+}
+
+async function applyManualFocus(value){
+  if(!currentTrack || !focusCaps || !focusCaps.focusDistance) return;
+  try{
+    /* Slider 0-100 mappes til focusDistance min-max */
+    const fd = focusCaps.focusDistance;
+    const min = fd.min || 0;
+    const max = fd.max || 1;
+    const dist = min + (max - min) * (value / 100);
+    const adv = [];
+    /* På Android skal focusMode først sættes til 'manual' eller 'single-shot'
+       for at focusDistance ikke ignoreres */
+    if(focusCaps.focusMode && focusCaps.focusMode.includes('manual')){
+      adv.push({ focusMode: 'manual' });
+    } else if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
+      adv.push({ focusMode: 'single-shot' });
+    }
+    adv.push({ focusDistance: dist });
+    await currentTrack.applyConstraints({ advanced: adv });
+    setFocusStatus(`Fokus: ${dist.toFixed(2)}`);
+  }catch(e){}
+}
+
+/* ── FIX 40 (v10.10): fokus-sweep — cykler gennem afstande for at finde det rigtige ── */
+async function startFocusSweep(){
+  if(!currentTrack || !focusCaps || !focusCaps.focusDistance) return;
+  stopSweep();
+  const fd = focusCaps.focusDistance;
+  const min = fd.min || 0;
+  const max = fd.max || 1;
+  /* Tæt på er typisk vigtigst til QR — vi sweeper primært i den nære ende */
+  const positions = [
+    min,                         /* tættest muligt */
+    min + (max - min) * 0.10,
+    min + (max - min) * 0.20,
+    min + (max - min) * 0.35,
+    min + (max - min) * 0.50,
+    min + (max - min) * 0.10,    /* tilbage til tæt på, fordi QR oftest scannes tæt */
+    min,
+  ];
+  sweepStep = 0;
+  setFocusStatus('Sweeper fokus…');
+
+  const adv = [];
+  if(focusCaps.focusMode && focusCaps.focusMode.includes('manual')){
+    adv.push({ focusMode: 'manual' });
+  } else if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
+    adv.push({ focusMode: 'single-shot' });
+  }
+  if(adv.length) try{ await currentTrack.applyConstraints({ advanced: adv }); }catch(e){}
+
+  sweepInterval = setInterval(async () => {
+    if(!currentTrack) return;
+    const dist = positions[sweepStep % positions.length];
+    sweepStep++;
+    try{
+      await currentTrack.applyConstraints({ advanced: [{ focusDistance: dist }] });
+      setFocusStatus(`Sweep: ${dist.toFixed(2)} (${sweepStep})`);
+    }catch(e){}
+  }, 600);
+}
+
+focusAutoBtn.addEventListener('click', () => {
+  focusMode = 'auto';
+  focusAutoBtn.classList.add('active');
+  focusSweepBtn.classList.remove('active');
+  focusManualBtn.classList.remove('active');
+  applyAutoFocus();
+});
+focusSweepBtn.addEventListener('click', () => {
+  focusMode = 'sweep';
+  focusSweepBtn.classList.add('active');
+  focusAutoBtn.classList.remove('active');
+  focusManualBtn.classList.remove('active');
+  startFocusSweep();
+});
+focusManualBtn.addEventListener('click', () => {
+  focusMode = 'manual';
+  focusManualBtn.classList.add('active');
+  focusAutoBtn.classList.remove('active');
+  focusSweepBtn.classList.remove('active');
+  stopSweep();
+  applyManualFocus(parseInt(focusSlider.value, 10));
+});
+focusSlider.addEventListener('input', () => {
+  if(focusMode !== 'manual'){
+    focusMode = 'manual';
+    focusManualBtn.classList.add('active');
+    focusAutoBtn.classList.remove('active');
+    focusSweepBtn.classList.remove('active');
+    stopSweep();
+  }
+  applyManualFocus(parseInt(focusSlider.value, 10));
+});
+
+/* ── FIX 41 (v10.10): tap på video → single-shot autofokus (forsøg at låse til center) ── */
+function attachTapToFocus(){
+  if(!videoEl) return;
+  videoEl.addEventListener('click', async () => {
+    if(!currentTrack || !focusCaps) return;
+    try{
+      if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
+        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+        setFocusStatus('Re-fokuserer…');
+        setTimeout(() => {
+          if(focusMode === 'auto' && focusCaps.focusMode.includes('continuous')){
+            currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+          }
+          setFocusStatus('');
+        }, 1000);
+      }
+    }catch(e){}
+  });
+}
 
 async function startCamera(){
   clearOutput();
@@ -348,39 +507,48 @@ async function startCamera(){
     const track = stream.getVideoTracks()[0];
     currentTrack = track;
     const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const adv = [];
+    focusCaps = caps;
 
-    if(caps.focusMode && caps.focusMode.includes('continuous')) adv.push({ focusMode:'continuous' });
+    /* ── FIX 42 (v10.10): KUN initial constraints — ikke fokus-loopet fra v10.7
+       Det loop overskrev brugerens fokus-valg. Vi sætter fokus én gang her,
+       og lader fokus-knapperne håndtere alt videre. ── */
+    const initAdv = [];
 
     if(caps.zoom){
       const targetZoom = isAndroid
         ? Math.min(2.0, caps.zoom.max || 1)
         : Math.min(1.2, caps.zoom.max || 1);
-      adv.push({ zoom: targetZoom });
+      initAdv.push({ zoom: targetZoom });
     }
 
     if(isAndroid){
-      if(caps.focusDistance){
-        adv.push({ focusDistance: Math.max(caps.focusDistance.min || 0.1, 0.1) });
-      }
       if(caps.exposureMode && caps.exposureMode.includes('continuous')){
-        adv.push({ exposureMode: 'continuous' });
+        initAdv.push({ exposureMode: 'continuous' });
       }
       if(caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')){
-        adv.push({ whiteBalanceMode: 'continuous' });
+        initAdv.push({ whiteBalanceMode: 'continuous' });
       }
     }
 
-    if(adv.length) track.applyConstraints({ advanced: adv }).catch(()=>{});
+    /* Start i auto-fokus tilstand */
+    if(caps.focusMode && caps.focusMode.includes('continuous')){
+      initAdv.push({ focusMode: 'continuous' });
+    }
+
+    if(initAdv.length) await track.applyConstraints({ advanced: initAdv }).catch(()=>{});
 
     if(caps.torch){ torchBtn.classList.add('visible'); }
     else { torchBtn.classList.remove('visible'); }
 
-    if(isAndroid) attachTapToFocus(track);
+    /* ── FIX 43 (v10.10): vis fokus-controls hvis hardwaren understøtter manuel fokus ── */
+    if(caps.focusDistance){
+      focusControls.classList.add('visible');
+      focusLabel.textContent = `Manuel fokus (${caps.focusDistance.min?.toFixed(2)} – ${caps.focusDistance.max?.toFixed(2)})`;
+    }else{
+      focusControls.classList.remove('visible');
+    }
 
-    focusInterval = setInterval(()=>{
-      if(track && adv.length) track.applyConstraints({ advanced: adv }).catch(()=>{});
-    }, 1000);
+    attachTapToFocus();
 
     videoEl.srcObject = stream;
     await videoEl.play();
@@ -389,11 +557,23 @@ async function startCamera(){
     cameraWrap.appendChild(torchBtn);
     cameraWrap.appendChild(scanFrame);
     cameraWrap.appendChild(engineBadge);
+    cameraWrap.appendChild(focusStatus);
     scanFrame.classList.add('active');
 
-    /* ── FIX 28 (v10.9): vis hvilken decoder der er aktiv ── */
     engineBadge.textContent = useNative ? '⚡ Native' : 'jsQR';
     engineBadge.classList.add('visible');
+
+    /* ── FIX 44 (v10.10): start AUTOMATISK med fokus-sweep på Android,
+       fordi continuous autofocus tydeligt fejler på din enhed.
+       Brugeren kan altid skifte til Auto eller Manuel. ── */
+    if(isAndroid && caps.focusDistance){
+      focusMode = 'sweep';
+      focusSweepBtn.classList.add('active');
+      focusAutoBtn.classList.remove('active');
+      focusManualBtn.classList.remove('active');
+      setTimeout(() => startFocusSweep(), 500);
+    }
+
     return true;
   }catch(err){
     console.warn('Camera start failed:', err);
@@ -404,21 +584,24 @@ async function startCamera(){
 function stopCamera(){
   if(raf) cancelAnimationFrame(raf);
   raf = null;
+  stopSweep();
   if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
   if(videoEl){ try{ videoEl.pause(); }catch(e){} videoEl.srcObject = null; }
   cameraWrap.innerHTML = 'Kamera er slukket';
   cameraWrap.appendChild(torchBtn);
   cameraWrap.appendChild(scanFrame);
   cameraWrap.appendChild(engineBadge);
+  cameraWrap.appendChild(focusStatus);
   scanFrame.classList.remove('active');
   torchBtn.classList.remove('visible','on');
   engineBadge.classList.remove('visible');
+  focusStatus.classList.remove('visible');
+  focusControls.classList.remove('visible');
   torchOn = false;
   currentTrack = null;
-  if(focusInterval){ clearInterval(focusInterval); focusInterval=null; }
+  focusCaps = null;
 }
 
-/* ── FIX 29 (v10.9): native decode via BarcodeDetector ── */
 async function tryDecodeNative(source){
   if(!barcodeDetector) return null;
   try{
@@ -430,7 +613,6 @@ async function tryDecodeNative(source){
   return null;
 }
 
-/* ── FIX 30 (v10.9): jsQR decode med inversionAttempts ── */
 function tryDecodeJsQR(imageData){
   if(!window.jsQR) return null;
   try{ return jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts:'attemptBoth' }); }
@@ -440,30 +622,23 @@ function tryDecodeJsQR(imageData){
   }
 }
 
-/* ── FIX 31 (v10.9): preprocessing — boost kontrast + threshold til binær billede ──
-   Hjælper jsQR med slørede QR-koder ved at gøre kanter skarpere */
 function preprocessImageData(srcImageData){
   ensurePreCanvas();
   const w = srcImageData.width, h = srcImageData.height;
   preCanvas.width = w; preCanvas.height = h;
   preCtx.putImageData(srcImageData, 0, 0);
 
-  /* Hent rådata og lav adaptive threshold */
   const out = preCtx.getImageData(0, 0, w, h);
   const d = out.data;
 
-  /* Først: konverter til gråtoner og find gennemsnit */
   let sum = 0;
   const gray = new Uint8Array(w * h);
   for(let i=0, p=0; i<d.length; i+=4, p++){
-    /* Luminance: 0.299R + 0.587G + 0.114B */
     const g = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
     gray[p] = g;
     sum += g;
   }
   const mean = sum / (w * h);
-
-  /* Threshold omkring middel + boost kontrast */
   const threshold = mean;
   for(let i=0, p=0; i<d.length; i+=4, p++){
     const v = gray[p] > threshold ? 255 : 0;
@@ -485,8 +660,6 @@ async function scanLoop(){
 
   let code = null;
 
-  /* ── FIX 32 (v10.9): native decoder som primær — virker direkte på video-elementet
-     uden at vi skal bygge ImageData. Dramatisk hurtigere og mere robust. */
   if(useNative && barcodeDetector){
     const nativeResult = await tryDecodeNative(videoEl);
     if(nativeResult){
@@ -496,7 +669,6 @@ async function scanLoop(){
     }
   }
 
-  /* Fallback til jsQR (eller eneste mulighed på iOS) */
   if(!useNative && window.jsQR){
     try{
       const side = Math.min(canvas.width, canvas.height) * 0.6;
@@ -504,17 +676,13 @@ async function scanLoop(){
       const cy = (canvas.height - side) / 2;
       const centerImg = ctx.getImageData(cx, cy, side, side);
 
-      /* Trin 1: råt billede */
       code = tryDecodeJsQR(centerImg);
 
-      /* ── FIX 33 (v10.9): Trin 2 — preprocessed (kontrast-boost) hver 3. frame ──
-         Vi kører ikke det her hver frame fordi det er tungt */
       if(!code && (frameCounter % 3 === 0)){
         const processed = preprocessImageData(centerImg);
         code = tryDecodeJsQR(processed);
       }
 
-      /* Trin 3: hele billedet som sidste fallback */
       if(!code && (frameCounter % 5 === 0)){
         const fullImg = ctx.getImageData(0, 0, canvas.width, canvas.height);
         code = tryDecodeJsQR(fullImg);
@@ -537,8 +705,8 @@ scanBtn.addEventListener('click', async ()=>{
   cameraWrap.appendChild(torchBtn);
   cameraWrap.appendChild(scanFrame);
   cameraWrap.appendChild(engineBadge);
+  cameraWrap.appendChild(focusStatus);
 
-  /* ── FIX 34 (v10.9): forsøg native decoder først, fald tilbage til jsQR ── */
   await initBarcodeDetector();
   if(!useNative){ await loadJsQR(); }
 
