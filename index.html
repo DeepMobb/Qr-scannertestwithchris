@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Info Scan — v10.11</title>
+<title>Info Scan — v11.0</title>
 <style>
   :root{
     --rw-red:#D20014;
@@ -19,54 +19,48 @@
   .topTitle{ color:#fff; font-weight:900; font-size:20px; }
   .logo{ height:70px; width:auto; display:block; }
   .card{ background:#fff; border-radius:12px; padding:14px; margin-bottom:14px; }
-  #cameraWrap{ height:260px; border-radius:10px; background:#f3f4f6; display:flex; align-items:center; justify-content:center; color:#9ca3af; overflow:hidden; position:relative; }
-  #cameraWrap video{ width:100%; height:100%; object-fit:cover; transform:none !important; -webkit-transform:none !important; }
-  #scanFrame{
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    width:70%; aspect-ratio:1/1; border:3px solid rgba(255,255,255,0.85);
-    border-radius:8px; box-shadow:0 0 0 2000px rgba(0,0,0,0.20);
-    pointer-events:none; display:none;
+  /* ── FIX 60 (v11.0): nyt video-wrap layout — qr-scanner har sit eget overlay-system ── */
+  #cameraWrap{
+    position:relative; width:100%; height:300px; border-radius:10px;
+    background:#f3f4f6; display:flex; align-items:center; justify-content:center;
+    color:#9ca3af; overflow:hidden;
   }
-  #scanFrame.active{ display:block; }
-  /* ── FIX 45 (v10.11): pulserende scan-linje for visuel feedback ── */
-  @keyframes scanPulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 1; }
+  #cameraVideo{ width:100%; height:100%; object-fit:cover; display:none; }
+  #cameraVideo.active{ display:block; }
+  /* ── FIX 61 (v11.0): qr-scanner overlay — biblioteket renderer scan-region selv ── */
+  .scan-region-highlight{
+    border-radius:10px;
+    outline: rgba(0,0,0,0.25) solid 50vmax;
   }
-  #scanFrame.active::after{
-    content: ''; position:absolute; left:0; right:0; top:50%;
-    height:2px; background:#22c55e; animation: scanPulse 1.2s ease-in-out infinite;
+  .scan-region-highlight-svg{
+    stroke: rgba(255,255,255,0.85) !important;
+    stroke-width: 4 !important;
+    stroke-dasharray: none !important;
   }
-  #torchBtn{
+  .code-outline-highlight{
+    stroke: #22c55e !important;
+    stroke-width: 5 !important;
+    stroke-dasharray: none !important;
+  }
+  #flashBtn{
     position:absolute; top:8px; right:8px; width:42px; height:42px;
     border-radius:50%; border:0; background:rgba(0,0,0,0.55); color:#fff;
-    font-size:20px; cursor:pointer; display:none; z-index:2;
+    font-size:20px; cursor:pointer; display:none; z-index:10;
   }
-  #torchBtn.visible{ display:block; }
-  #torchBtn.on{ background:rgba(255,200,0,0.9); color:#000; }
+  #flashBtn.visible{ display:block; }
+  #flashBtn.on{ background:rgba(255,200,0,0.9); color:#000; }
+  #cameraStatus{
+    position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    padding:4px 10px; border-radius:6px; background:rgba(0,0,0,0.7); color:#fff;
+    font-size:11px; font-weight:700; display:none; z-index:10; white-space:nowrap;
+  }
+  #cameraStatus.visible{ display:block; }
   #engineBadge{
     position:absolute; top:8px; left:8px; padding:4px 8px;
     border-radius:6px; background:rgba(0,0,0,0.55); color:#fff;
-    font-size:11px; font-weight:700; display:none; z-index:2;
+    font-size:11px; font-weight:700; display:none; z-index:10;
   }
   #engineBadge.visible{ display:block; }
-  #focusStatus{
-    position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
-    padding:4px 10px; border-radius:6px; background:rgba(0,0,0,0.7); color:#fff;
-    font-size:11px; font-weight:700; display:none; z-index:2; white-space:nowrap;
-  }
-  #focusStatus.visible{ display:block; }
-  .focusControls{ display:none; margin-top:10px; }
-  .focusControls.visible{ display:block; }
-  .focusControls label{ display:block; font-size:13px; font-weight:700; margin-bottom:4px; color:#374151; }
-  .focusControls input[type=range]{ width:100%; height:32px; }
-  .focusControls .focusBtns{ display:flex; gap:6px; margin-top:6px; }
-  .focusControls button{ flex:1; height:36px; border-radius:8px; border:1px solid #d1d5db; background:#fff; font-size:12px; font-weight:700; cursor:pointer; }
-  .focusControls button.active{ background:#0f172a; color:#fff; border-color:#0f172a; }
-  /* ── FIX 46 (v10.11): zoom-controls ── */
-  .zoomControls{ display:none; margin-top:10px; }
-  .zoomControls.visible{ display:block; }
-  .zoomControls label{ display:block; font-size:13px; font-weight:700; margin-bottom:4px; color:#374151; }
   .btn{ width:100%; height:56px; margin-top:14px; border-radius:10px; border:0; background:#0f172a; color:#fff; font-weight:900; font-size:18px; cursor:pointer; }
   .box{ border:2px solid var(--black); border-radius:6px; padding:10px 12px; margin-bottom:12px; background:white; }
   .catTitle{ font-size:17px; font-weight:900; margin-bottom:8px; }
@@ -83,36 +77,20 @@
 <body>
 
 <div class="topbar">
-  <div class="topTitle">Info Scan — v10.11</div>
+  <div class="topTitle">Info Scan — v11.0</div>
   <img class="logo" src="logo.png" alt="ROCKWOOL logo" onerror="this.style.display='none'"/>
 </div>
 
 <div class="card">
   <div style="font-weight:700;margin-bottom:8px;">Scanner</div>
   <div id="cameraWrap">
-    Kamera er slukket
+    <span id="placeholder">Kamera er slukket</span>
+    <video id="cameraVideo" playsinline></video>
     <div id="engineBadge"></div>
-    <button id="torchBtn" title="Lommelygte">💡</button>
-    <div id="scanFrame"></div>
-    <div id="focusStatus"></div>
+    <button id="flashBtn" title="Lommelygte">💡</button>
+    <div id="cameraStatus"></div>
   </div>
   <button id="scanBtn" class="btn">NY SCANNING</button>
-
-  <!-- ── FIX 47 (v10.11): zoom-slider ── -->
-  <div id="zoomControls" class="zoomControls">
-    <label id="zoomLabel">Zoom: 1.0×</label>
-    <input type="range" id="zoomSlider" min="100" max="400" value="100" step="10"/>
-  </div>
-
-  <div id="focusControls" class="focusControls">
-    <label id="focusLabel">Manuel fokus</label>
-    <input type="range" id="focusSlider" min="0" max="100" value="50"/>
-    <div class="focusBtns">
-      <button id="focusAutoBtn" class="active" type="button">Auto-fokus</button>
-      <button id="focusSweepBtn" type="button">Auto-sweep</button>
-      <button id="focusManualBtn" type="button">Manuel</button>
-    </div>
-  </div>
 </div>
 
 <div class="card" style="position:relative;">
@@ -121,644 +99,304 @@
   <button id="copyBtn" disabled>KOPIER</button>
 </div>
 
-<script>
-const scanBtn = document.getElementById('scanBtn');
-const output  = document.getElementById('output');
-const copyBtn = document.getElementById('copyBtn');
-const cameraWrap = document.getElementById('cameraWrap');
-const scanFrame = document.getElementById('scanFrame');
-const torchBtn = document.getElementById('torchBtn');
-const engineBadge = document.getElementById('engineBadge');
-const focusStatus = document.getElementById('focusStatus');
-const focusControls = document.getElementById('focusControls');
-const focusSlider = document.getElementById('focusSlider');
-const focusLabel = document.getElementById('focusLabel');
-const focusAutoBtn = document.getElementById('focusAutoBtn');
-const focusSweepBtn = document.getElementById('focusSweepBtn');
-const focusManualBtn = document.getElementById('focusManualBtn');
-const zoomControls = document.getElementById('zoomControls');
-const zoomSlider = document.getElementById('zoomSlider');
-const zoomLabel = document.getElementById('zoomLabel');
+<!-- ── FIX 62 (v11.0): brug nimiq/qr-scanner biblioteket ──
+     Det her er biblioteket Nimiq Wallet og 5.200+ andre projekter bruger.
+     2-3x bedre detection rate end jsQR ifølge officielle benchmarks.
+     Bruger BarcodeDetector hvor tilgængelig, falder tilbage til ZXing-port.
+     Kører i WebWorker så UI ikke fryser. -->
+<script type="module">
+  import QrScanner from 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js';
 
-let videoEl = null;
-let canvas = null;
-let ctx = null;
-let stream = null;
-let raf = null;
-let currentTrack = null;
-let torchOn = false;
+  /* ──────────────────────────────────────────────────────────────
+     UI-elementer
+     ────────────────────────────────────────────────────────────── */
+  const scanBtn = document.getElementById('scanBtn');
+  const output  = document.getElementById('output');
+  const copyBtn = document.getElementById('copyBtn');
+  const cameraWrap = document.getElementById('cameraWrap');
+  const videoEl = document.getElementById('cameraVideo');
+  const placeholder = document.getElementById('placeholder');
+  const flashBtn = document.getElementById('flashBtn');
+  const cameraStatus = document.getElementById('cameraStatus');
+  const engineBadge = document.getElementById('engineBadge');
 
-let focusMode = 'auto';
-let focusCaps = null;
-let zoomCaps = null;
-let sweepInterval = null;
-let sweepStep = 0;
+  let qrScanner = null;
+  const isAndroid = /Android/i.test(navigator.userAgent);
 
-/* ── FIX 48 (v10.11): faktiske, sanitized fokus-grænser efter overflow-fix ── */
-let focusMin = 0;
-let focusMax = 1;
-
-const isAndroid = /Android/i.test(navigator.userAgent);
-
-let barcodeDetector = null;
-let useNative = false;
-
-async function initBarcodeDetector(){
-  try{
-    if('BarcodeDetector' in window){
-      const formats = await window.BarcodeDetector.getSupportedFormats();
-      if(formats.includes('qr_code')){
-        barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        useNative = true;
-        return true;
-      }
-    }
-  }catch(e){ console.warn('BarcodeDetector init failed:', e); }
-  useNative = false;
-  return false;
-}
-
-let preCanvas = null, preCtx = null;
-function ensurePreCanvas(){
-  if(!preCanvas){ preCanvas = document.createElement('canvas'); preCtx = preCanvas.getContext('2d', { willReadFrequently: true }); }
-}
-
-/* ── FIX 49 (v10.11): KRITISK — sanitize capabilities mod overflow / sentinel-værdier ──
-   Din enhed rapporterer focusDistance.max = 9.22e18 (2^63). Det er en bug i Chrome
-   for visse Android-enheder hvor "uendelig" mappes til en numeric sentinel.
-   Vi clamper til realistiske værdier. */
-function sanitizeRange(range, fallbackMin, fallbackMax, realisticMax){
-  if(!range) return null;
-  let min = (typeof range.min === 'number' && isFinite(range.min)) ? range.min : fallbackMin;
-  let max = (typeof range.max === 'number' && isFinite(range.max)) ? range.max : fallbackMax;
-  /* Sentinel detection: hvis max er absurd høj, brug fallback */
-  if(max > realisticMax * 100 || max < min){
-    max = realisticMax;
+  function setStatus(msg){
+    if(!msg){ cameraStatus.classList.remove('visible'); cameraStatus.textContent=''; return; }
+    cameraStatus.textContent = msg;
+    cameraStatus.classList.add('visible');
   }
-  if(min > max){ min = fallbackMin; }
-  return { min, max, step: range.step };
-}
 
-function setFocusStatus(msg){
-  if(!msg){ focusStatus.classList.remove('visible'); focusStatus.textContent=''; return; }
-  focusStatus.textContent = msg;
-  focusStatus.classList.add('visible');
-}
+  /* ──────────────────────────────────────────────────────────────
+     Eksisterende parser- og render-logik (uændret fra v10.x)
+     ────────────────────────────────────────────────────────────── */
+  function esc(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+  function classifyWeight(kg){
+    if(kg <= 15) return {cls:'w-green', extra:''};
+    if(kg <= 30) return {cls:'w-yellow', extra:' (Pas på når du løfter)'};
+    return {cls:'w-red', extra:' (Brug hjælpe værktøj til løft)'};
+  }
+  function enableCopy(enable){ copyBtn.disabled = !enable; }
+  function clearOutput(){ output.innerHTML = ''; enableCopy(false); }
 
-function esc(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
-function classifyWeight(kg){
-  if(kg <= 15) return {cls:'w-green', extra:''};
-  if(kg <= 30) return {cls:'w-yellow', extra:' (Pas på når du løfter)'};
-  return {cls:'w-red', extra:' (Brug hjælpe værktøj til løft)'};
-}
-function enableCopy(enable){ copyBtn.disabled = !enable; }
-function clearOutput(){ output.innerHTML = ''; enableCopy(false); }
-
-function parseRaw(raw){
-  const lines = String(raw||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-  const data = {};
-  let collecting=false;
-  let andenArr=[];
-  const known = ['Område','Varenummer','Operatør','Antal','Længde','Bredde','Tykkelse','Vægt',
-                 'Længde i meter','Meter','Areal i m²','Anden info','Lagerplads','Lager/Område','Reol','Hylde','Plads','Kemi'];
-  for(let i=0;i<lines.length;i++){
-    const line = lines[i];
-    if(/^Anden info/i.test(line)){
-      collecting = true;
-      const parts=line.split(':');
-      if(parts.length>1) andenArr.push(parts.slice(1).join(':').trim());
-      continue;
-    }
-    if(collecting){
-      if(/^[A-Za-zÆØÅæøå].*?:/.test(line)){
-        const maybeKey = line.split(':')[0].trim();
-        if(known.includes(maybeKey)){ collecting = false; i--; continue; }
+  function parseRaw(raw){
+    const lines = String(raw||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+    const data = {};
+    let collecting=false;
+    let andenArr=[];
+    const known = ['Område','Varenummer','Operatør','Antal','Længde','Bredde','Tykkelse','Vægt',
+                   'Længde i meter','Meter','Areal i m²','Anden info','Lagerplads','Lager/Område','Reol','Hylde','Plads','Kemi'];
+    for(let i=0;i<lines.length;i++){
+      const line = lines[i];
+      if(/^Anden info/i.test(line)){
+        collecting = true;
+        const parts=line.split(':');
+        if(parts.length>1) andenArr.push(parts.slice(1).join(':').trim());
+        continue;
       }
-      andenArr.push(line);
-      continue;
-    }
-    if(line.includes(':')){
-      const parts=line.split(':');
-      const key = parts[0].trim();
-      const value = parts.slice(1).join(':').trim();
-      if(key === 'Længde i meter'){
-        data['Meter'] = value;
+      if(collecting){
+        if(/^[A-Za-zÆØÅæøå].*?:/.test(line)){
+          const maybeKey = line.split(':')[0].trim();
+          if(known.includes(maybeKey)){ collecting = false; i--; continue; }
+        }
+        andenArr.push(line);
+        continue;
+      }
+      if(line.includes(':')){
+        const parts=line.split(':');
+        const key = parts[0].trim();
+        const value = parts.slice(1).join(':').trim();
+        if(key === 'Længde i meter'){
+          data['Meter'] = value;
+        } else {
+          data[key] = value;
+        }
       } else {
-        data[key] = value;
+        const lastKey = Object.keys(data).slice(-1)[0];
+        if(lastKey){ data[lastKey] = (data[lastKey] + '\n' + line).trim(); }
+        else { data['_extra'] = (data['_extra'] ? data['_extra'] + '\n' : '') + line; }
       }
-    } else {
-      const lastKey = Object.keys(data).slice(-1)[0];
-      if(lastKey){ data[lastKey] = (data[lastKey] + '\n' + line).trim(); }
-      else { data['_extra'] = (data['_extra'] ? data['_extra'] + '\n' : '') + line; }
     }
+    if(andenArr.length) data['Anden info'] = andenArr.join('\n');
+    return data;
   }
-  if(andenArr.length) data['Anden info'] = andenArr.join('\n');
-  return data;
-}
 
-function makeBox(title, valueHtml){
-  const d = document.createElement('div');
-  d.className = 'box';
-  d.innerHTML = `<div class="catTitle">${esc(title)}</div><div class="boxValue">${valueHtml}</div>`;
-  return d;
-}
-function makeKemiBox(title, valueHtml, showHazard){
-  const d = document.createElement('div');
-  d.className = 'box';
-  d.innerHTML = `<div class="catTitle">${esc(title)}</div>
-    <div class="kemiRow">
-      <div class="boxValue">${valueHtml}</div>
-      ${showHazard? `<svg class="hazard" viewBox="0 0 400 400">
-        <polygon points="200,20 380,200 200,380 20,200" fill="white" stroke="#d32f2f" stroke-width="35"/>
-        <circle cx="200" cy="270" r="35" fill="black"/>
-        <rect x="182" y="90" width="36" height="140" rx="18" fill="black"/>
-      </svg>` : ''}
-    </div>`;
-  return d;
-}
-
-function renderData(data){
-  clearOutput();
-  const boxes = [
-    {title:'Område', keys:['Område']},
-    {title:'Varenummer', keys:['Varenummer']},
-    {title:'Operatør', keys:['Operatør']},
-    {title:'Antal', keys:['Antal']},
-    {title:'Mål', keys:['Længde','Bredde','Tykkelse']},
-    {title:'Vægt', keys:['Vægt']},
-    {title:'Meter', keys:['Meter']},
-    {title:'Areal i m²', keys:['Areal i m²']},
-    {title:'Anden info', keys:['Anden info']},
-    {title:'Lagerplads', keys:['Lagerplads','Lager/Område','Reol','Hylde','Plads']},
-    {title:'Kemi', keys:['Kemi']}
-  ];
-
-  let unFound = false;
-  Object.values(data).forEach(v => { if(/\bUN\d+/.test(v)) unFound = true; });
-
-  boxes.forEach(box => {
-    const present = box.keys.filter(k => (k in data) && String(data[k]).trim() !== '');
-    if(!present.length) return;
-
-    if(box.title === 'Mål'){
-      const arr = [];
-      ['Længde','Bredde','Tykkelse'].forEach(k => {
-        if(k in data){
-          let val = esc(data[k]);
-          if(k === 'Tykkelse') val = val.replace(/mm/g, 'my');
-          arr.push(`${k}: ${val}`);
-        }
-      });
-      output.appendChild(makeBox(box.title, arr.join('\n')));
-      return;
-    }
-
-    if(box.title === 'Vægt'){
-      const raw = data['Vægt'] ? String(data['Vægt']).trim() : '';
-      const m = raw.match(/([\d\.,]+)/);
-      let kg = null;
-      if(m) kg = parseFloat(m[1].replace(',','.'));
-      let cls = '', txt = esc(raw);
-      if(kg !== null && !isNaN(kg)){
-        const inf = classifyWeight(kg);
-        cls = inf.cls;
-        txt = `${kg} kg${inf.extra}`;
-      }
-      output.appendChild(makeBox(box.title, `<span class="${cls}">${txt}</span>`));
-      return;
-    }
-
-    if(box.title === 'Anden info'){
-      output.appendChild(makeBox(box.title, esc(data['Anden info'] || '')));
-      return;
-    }
-
-    if(box.title === 'Lagerplads'){
-      const arr = [];
-      ['Lagerplads','Lager/Område','Reol','Hylde','Plads'].forEach((k, i) => {
-        if(k in data){
-          if(i===0) return;
-          arr.push(`${k}: ${esc(data[k])}`);
-        }
-      });
-      output.appendChild(makeBox(box.title, arr.join('\n')));
-      return;
-    }
-
-    if(box.title === 'Kemi'){
-      const v = esc(data['Kemi'] || '');
-      output.appendChild(makeKemiBox('Kemi', v, unFound || /\bUN\d+/.test(v)));
-      return;
-    }
-
-    const key = present[0];
-    output.appendChild(makeBox(box.title, esc(data[key])));
-  });
-
-  enableCopy(true);
-}
-
-copyBtn.addEventListener('click', async () => {
-  try{
-    await navigator.clipboard.writeText(output.innerText || '');
-    const prev = copyBtn.textContent;
-    copyBtn.textContent = 'KOPIERET';
-    setTimeout(()=>copyBtn.textContent = prev,700);
-  }catch(e){}
-});
-
-function loadJsQR(){
-  return new Promise(res=>{
-    if(window.jsQR) return res();
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
-    s.onload = res;
-    s.onerror = res;
-    document.head.appendChild(s);
-  });
-}
-
-async function toggleTorch(){
-  if(!currentTrack) return;
-  try{
-    torchOn = !torchOn;
-    await currentTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
-    torchBtn.classList.toggle('on', torchOn);
-  }catch(e){
-    torchOn = false;
-    torchBtn.classList.remove('on');
+  function makeBox(title, valueHtml){
+    const d = document.createElement('div');
+    d.className = 'box';
+    d.innerHTML = `<div class="catTitle">${esc(title)}</div><div class="boxValue">${valueHtml}</div>`;
+    return d;
   }
-}
-torchBtn.addEventListener('click', toggleTorch);
-
-function stopSweep(){
-  if(sweepInterval){ clearInterval(sweepInterval); sweepInterval = null; }
-}
-
-async function applyAutoFocus(){
-  stopSweep();
-  if(!currentTrack || !focusCaps) return;
-  try{
-    if(focusCaps.focusMode && focusCaps.focusMode.includes('continuous')){
-      await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      setFocusStatus('Auto-fokus aktiv');
-      setTimeout(() => setFocusStatus(''), 1500);
-    }
-  }catch(e){}
-}
-
-async function applyManualFocus(value){
-  if(!currentTrack || !focusCaps || !focusCaps.focusDistance) return;
-  try{
-    /* ── FIX 50 (v10.11): brug sanitized focusMin/focusMax i stedet for rå caps ── */
-    const dist = focusMin + (focusMax - focusMin) * (value / 100);
-    const adv = [];
-    if(focusCaps.focusMode && focusCaps.focusMode.includes('manual')){
-      adv.push({ focusMode: 'manual' });
-    } else if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
-      adv.push({ focusMode: 'single-shot' });
-    }
-    adv.push({ focusDistance: dist });
-    await currentTrack.applyConstraints({ advanced: adv });
-    setFocusStatus(`Fokus: ${dist.toFixed(2)} (${value}%)`);
-  }catch(e){}
-}
-
-async function startFocusSweep(){
-  if(!currentTrack || !focusCaps || !focusCaps.focusDistance) return;
-  stopSweep();
-
-  /* ── FIX 51 (v10.11): brug sanitized værdier ── */
-  const positions = [
-    focusMin,
-    focusMin + (focusMax - focusMin) * 0.10,
-    focusMin + (focusMax - focusMin) * 0.20,
-    focusMin + (focusMax - focusMin) * 0.35,
-    focusMin + (focusMax - focusMin) * 0.50,
-    focusMin + (focusMax - focusMin) * 0.10,
-    focusMin,
-  ];
-  sweepStep = 0;
-  setFocusStatus('Sweeper fokus…');
-
-  const adv = [];
-  if(focusCaps.focusMode && focusCaps.focusMode.includes('manual')){
-    adv.push({ focusMode: 'manual' });
-  } else if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
-    adv.push({ focusMode: 'single-shot' });
+  function makeKemiBox(title, valueHtml, showHazard){
+    const d = document.createElement('div');
+    d.className = 'box';
+    d.innerHTML = `<div class="catTitle">${esc(title)}</div>
+      <div class="kemiRow">
+        <div class="boxValue">${valueHtml}</div>
+        ${showHazard? `<svg class="hazard" viewBox="0 0 400 400">
+          <polygon points="200,20 380,200 200,380 20,200" fill="white" stroke="#d32f2f" stroke-width="35"/>
+          <circle cx="200" cy="270" r="35" fill="black"/>
+          <rect x="182" y="90" width="36" height="140" rx="18" fill="black"/>
+        </svg>` : ''}
+      </div>`;
+    return d;
   }
-  if(adv.length) try{ await currentTrack.applyConstraints({ advanced: adv }); }catch(e){}
 
-  sweepInterval = setInterval(async () => {
-    if(!currentTrack) return;
-    const dist = positions[sweepStep % positions.length];
-    sweepStep++;
-    try{
-      await currentTrack.applyConstraints({ advanced: [{ focusDistance: dist }] });
-      setFocusStatus(`Sweep ${sweepStep}/${positions.length}: ${dist.toFixed(2)}`);
-    }catch(e){}
-  }, 600);
-}
+  function renderData(data){
+    clearOutput();
+    const boxes = [
+      {title:'Område', keys:['Område']},
+      {title:'Varenummer', keys:['Varenummer']},
+      {title:'Operatør', keys:['Operatør']},
+      {title:'Antal', keys:['Antal']},
+      {title:'Mål', keys:['Længde','Bredde','Tykkelse']},
+      {title:'Vægt', keys:['Vægt']},
+      {title:'Meter', keys:['Meter']},
+      {title:'Areal i m²', keys:['Areal i m²']},
+      {title:'Anden info', keys:['Anden info']},
+      {title:'Lagerplads', keys:['Lagerplads','Lager/Område','Reol','Hylde','Plads']},
+      {title:'Kemi', keys:['Kemi']}
+    ];
 
-focusAutoBtn.addEventListener('click', () => {
-  focusMode = 'auto';
-  focusAutoBtn.classList.add('active');
-  focusSweepBtn.classList.remove('active');
-  focusManualBtn.classList.remove('active');
-  applyAutoFocus();
-});
-focusSweepBtn.addEventListener('click', () => {
-  focusMode = 'sweep';
-  focusSweepBtn.classList.add('active');
-  focusAutoBtn.classList.remove('active');
-  focusManualBtn.classList.remove('active');
-  startFocusSweep();
-});
-focusManualBtn.addEventListener('click', () => {
-  focusMode = 'manual';
-  focusManualBtn.classList.add('active');
-  focusAutoBtn.classList.remove('active');
-  focusSweepBtn.classList.remove('active');
-  stopSweep();
-  applyManualFocus(parseInt(focusSlider.value, 10));
-});
-focusSlider.addEventListener('input', () => {
-  if(focusMode !== 'manual'){
-    focusMode = 'manual';
-    focusManualBtn.classList.add('active');
-    focusAutoBtn.classList.remove('active');
-    focusSweepBtn.classList.remove('active');
-    stopSweep();
-  }
-  applyManualFocus(parseInt(focusSlider.value, 10));
-});
+    let unFound = false;
+    Object.values(data).forEach(v => { if(/\bUN\d+/.test(v)) unFound = true; });
 
-/* ── FIX 52 (v10.11): zoom-slider handler ── */
-zoomSlider.addEventListener('input', async () => {
-  if(!currentTrack || !zoomCaps) return;
-  const z = parseInt(zoomSlider.value, 10) / 100;
-  zoomLabel.textContent = `Zoom: ${z.toFixed(1)}×`;
-  try{
-    await currentTrack.applyConstraints({ advanced: [{ zoom: z }] });
-  }catch(e){}
-});
+    boxes.forEach(box => {
+      const present = box.keys.filter(k => (k in data) && String(data[k]).trim() !== '');
+      if(!present.length) return;
 
-function attachTapToFocus(){
-  if(!videoEl) return;
-  videoEl.addEventListener('click', async () => {
-    if(!currentTrack || !focusCaps) return;
-    try{
-      if(focusCaps.focusMode && focusCaps.focusMode.includes('single-shot')){
-        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
-        setFocusStatus('Re-fokuserer…');
-        setTimeout(() => {
-          if(focusMode === 'auto' && focusCaps.focusMode.includes('continuous')){
-            currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+      if(box.title === 'Mål'){
+        const arr = [];
+        ['Længde','Bredde','Tykkelse'].forEach(k => {
+          if(k in data){
+            let val = esc(data[k]);
+            if(k === 'Tykkelse') val = val.replace(/mm/g, 'my');
+            arr.push(`${k}: ${val}`);
           }
-          setFocusStatus('');
-        }, 1000);
+        });
+        output.appendChild(makeBox(box.title, arr.join('\n')));
+        return;
       }
+
+      if(box.title === 'Vægt'){
+        const raw = data['Vægt'] ? String(data['Vægt']).trim() : '';
+        const m = raw.match(/([\d\.,]+)/);
+        let kg = null;
+        if(m) kg = parseFloat(m[1].replace(',','.'));
+        let cls = '', txt = esc(raw);
+        if(kg !== null && !isNaN(kg)){
+          const inf = classifyWeight(kg);
+          cls = inf.cls;
+          txt = `${kg} kg${inf.extra}`;
+        }
+        output.appendChild(makeBox(box.title, `<span class="${cls}">${txt}</span>`));
+        return;
+      }
+
+      if(box.title === 'Anden info'){
+        output.appendChild(makeBox(box.title, esc(data['Anden info'] || '')));
+        return;
+      }
+
+      if(box.title === 'Lagerplads'){
+        const arr = [];
+        ['Lagerplads','Lager/Område','Reol','Hylde','Plads'].forEach((k, i) => {
+          if(k in data){
+            if(i===0) return;
+            arr.push(`${k}: ${esc(data[k])}`);
+          }
+        });
+        output.appendChild(makeBox(box.title, arr.join('\n')));
+        return;
+      }
+
+      if(box.title === 'Kemi'){
+        const v = esc(data['Kemi'] || '');
+        output.appendChild(makeKemiBox('Kemi', v, unFound || /\bUN\d+/.test(v)));
+        return;
+      }
+
+      const key = present[0];
+      output.appendChild(makeBox(box.title, esc(data[key])));
+    });
+
+    enableCopy(true);
+  }
+
+  copyBtn.addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(output.innerText || '');
+      const prev = copyBtn.textContent;
+      copyBtn.textContent = 'KOPIERET';
+      setTimeout(()=>copyBtn.textContent = prev,700);
     }catch(e){}
   });
-}
 
-async function startCamera(){
-  clearOutput();
-  if(!videoEl){ videoEl = document.createElement('video'); videoEl.setAttribute('playsinline','true'); }
-  if(!canvas){ canvas = document.createElement('canvas'); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
+  /* ──────────────────────────────────────────────────────────────
+     FIX 63 (v11.0): qr-scanner workerPath
+     Biblioteket loader sin worker dynamisk — vi peger den eksplicit
+     til CDN'en så den finder den korrekt.
+     ────────────────────────────────────────────────────────────── */
+  QrScanner.WORKER_PATH = 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner-worker.min.js';
 
-  const constraints = {
-    video: {
-      facingMode: { ideal: "environment" },
-      width:  { ideal: isAndroid ? 2560 : 1920 },
-      height: { ideal: isAndroid ? 1440 : 1080 }
-    },
-    audio: false
-  };
-
-  try{
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    const track = stream.getVideoTracks()[0];
-    currentTrack = track;
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    focusCaps = caps;
-
-    /* ── FIX 53 (v10.11): sanitize focus-range straks ── */
-    if(caps.focusDistance){
-      const sanitized = sanitizeRange(caps.focusDistance, 0, 1, 10);
-      focusMin = sanitized.min;
-      focusMax = sanitized.max;
-    }
-
-    /* ── FIX 54 (v10.11): sanitize zoom-range ── */
-    if(caps.zoom){
-      const sanitized = sanitizeRange(caps.zoom, 1, 4, 8);
-      zoomCaps = sanitized;
-      zoomSlider.min = Math.round(sanitized.min * 100);
-      zoomSlider.max = Math.round(sanitized.max * 100);
-      zoomSlider.value = 100;
-      zoomLabel.textContent = `Zoom: 1.0× (max ${sanitized.max.toFixed(1)}×)`;
-      zoomControls.classList.add('visible');
-    } else {
-      zoomControls.classList.remove('visible');
-    }
-
-    const initAdv = [];
-
-    /* ── FIX 55 (v10.11): START UDEN ZOOM på Android ──
-       2x zoom skar quiet zone af QR-koden. Brugeren kan bruge slideren hvis nødvendigt. */
-    if(caps.zoom){
-      initAdv.push({ zoom: 1 });
-    }
-
-    if(isAndroid){
-      if(caps.exposureMode && caps.exposureMode.includes('continuous')){
-        initAdv.push({ exposureMode: 'continuous' });
-      }
-      if(caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')){
-        initAdv.push({ whiteBalanceMode: 'continuous' });
-      }
-    }
-
-    if(caps.focusMode && caps.focusMode.includes('continuous')){
-      initAdv.push({ focusMode: 'continuous' });
-    }
-
-    if(initAdv.length) await track.applyConstraints({ advanced: initAdv }).catch(()=>{});
-
-    if(caps.torch){ torchBtn.classList.add('visible'); }
-    else { torchBtn.classList.remove('visible'); }
-
-    /* ── FIX 56 (v10.11): vis fokus-controls med RIGTIGE værdier ── */
-    if(caps.focusDistance){
-      focusControls.classList.add('visible');
-      focusLabel.textContent = `Manuel fokus (skala 0–100)`;
-    }else{
-      focusControls.classList.remove('visible');
-    }
-
-    attachTapToFocus();
-
-    videoEl.srcObject = stream;
-    await videoEl.play();
-    cameraWrap.innerHTML = '';
-    cameraWrap.appendChild(videoEl);
-    cameraWrap.appendChild(torchBtn);
-    cameraWrap.appendChild(scanFrame);
-    cameraWrap.appendChild(engineBadge);
-    cameraWrap.appendChild(focusStatus);
-    scanFrame.classList.add('active');
-
-    engineBadge.textContent = useNative ? '⚡ Native' : 'jsQR';
-    engineBadge.classList.add('visible');
-
-    /* ── FIX 57 (v10.11): start i AUTO på Android — det er sjældent fokus der er problemet
-       hvis billedet allerede er skarpt. Brugeren kan aktivere sweep manuelt. ── */
-    focusMode = 'auto';
-    focusAutoBtn.classList.add('active');
-    focusSweepBtn.classList.remove('active');
-    focusManualBtn.classList.remove('active');
-
-    return true;
-  }catch(err){
-    console.warn('Camera start failed:', err);
-    return false;
-  }
-}
-
-function stopCamera(){
-  if(raf) cancelAnimationFrame(raf);
-  raf = null;
-  stopSweep();
-  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
-  if(videoEl){ try{ videoEl.pause(); }catch(e){} videoEl.srcObject = null; }
-  cameraWrap.innerHTML = 'Kamera er slukket';
-  cameraWrap.appendChild(torchBtn);
-  cameraWrap.appendChild(scanFrame);
-  cameraWrap.appendChild(engineBadge);
-  cameraWrap.appendChild(focusStatus);
-  scanFrame.classList.remove('active');
-  torchBtn.classList.remove('visible','on');
-  engineBadge.classList.remove('visible');
-  focusStatus.classList.remove('visible');
-  focusControls.classList.remove('visible');
-  zoomControls.classList.remove('visible');
-  torchOn = false;
-  currentTrack = null;
-  focusCaps = null;
-  zoomCaps = null;
-}
-
-async function tryDecodeNative(source){
-  if(!barcodeDetector) return null;
-  try{
-    const results = await barcodeDetector.detect(source);
-    if(results && results.length > 0){
-      return { data: results[0].rawValue };
-    }
-  }catch(e){}
-  return null;
-}
-
-function tryDecodeJsQR(imageData){
-  if(!window.jsQR) return null;
-  try{ return jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts:'attemptBoth' }); }
-  catch(e){
-    try{ return jsQR(imageData.data, imageData.width, imageData.height); }
-    catch(e2){ return null; }
-  }
-}
-
-function preprocessImageData(srcImageData){
-  ensurePreCanvas();
-  const w = srcImageData.width, h = srcImageData.height;
-  preCanvas.width = w; preCanvas.height = h;
-  preCtx.putImageData(srcImageData, 0, 0);
-
-  const out = preCtx.getImageData(0, 0, w, h);
-  const d = out.data;
-
-  let sum = 0;
-  const gray = new Uint8Array(w * h);
-  for(let i=0, p=0; i<d.length; i+=4, p++){
-    const g = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
-    gray[p] = g;
-    sum += g;
-  }
-  const mean = sum / (w * h);
-  const threshold = mean;
-  for(let i=0, p=0; i<d.length; i+=4, p++){
-    const v = gray[p] > threshold ? 255 : 0;
-    d[i] = d[i+1] = d[i+2] = v;
-  }
-  return out;
-}
-
-let frameCounter = 0;
-
-async function scanLoop(){
-  if(!videoEl || videoEl.readyState !== videoEl.HAVE_ENOUGH_DATA){
-    raf = requestAnimationFrame(scanLoop);
-    return;
-  }
-
-  if(canvas.width !== videoEl.videoWidth){ canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight; }
-  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-
-  let code = null;
-
-  /* ── FIX 58 (v10.11): native decode på HELE video-elementet (ikke bare centrum) ──
-     BarcodeDetector er hurtig, så lad den se det fulde billede - den finder selv koden.
-     Tidligere version begrænsede til centrum, men det clippede koden hvis den var lidt skæv. */
-  if(useNative && barcodeDetector){
-    const nativeResult = await tryDecodeNative(videoEl);
-    if(nativeResult){
-      stopCamera();
-      renderData(parseRaw(nativeResult.data));
-      return;
-    }
-  }
-
-  if(!useNative && window.jsQR){
+  /* ──────────────────────────────────────────────────────────────
+     FIX 64 (v11.0): flash-knap håndteret af qr-scanner
+     Biblioteket har indbygget hasFlash/turnFlashOn/Off — meget mere
+     robust end vores manuelle torch-toggle fra tidligere versioner.
+     ────────────────────────────────────────────────────────────── */
+  flashBtn.addEventListener('click', async () => {
+    if(!qrScanner) return;
     try{
-      /* ── FIX 59 (v10.11): start med fuldt billede til jsQR også, kun fall tilbage til centrum hvis nødvendigt ── */
-      const fullImg = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      code = tryDecodeJsQR(fullImg);
-
-      if(!code && (frameCounter % 3 === 0)){
-        const side = Math.min(canvas.width, canvas.height) * 0.7;
-        const cx = (canvas.width - side) / 2;
-        const cy = (canvas.height - side) / 2;
-        const centerImg = ctx.getImageData(cx, cy, side, side);
-        const processed = preprocessImageData(centerImg);
-        code = tryDecodeJsQR(processed);
-      }
+      await qrScanner.toggleFlash();
+      flashBtn.classList.toggle('on', qrScanner.isFlashOn());
     }catch(e){
-      raf = requestAnimationFrame(scanLoop);
-      return;
+      console.warn('Flash toggle failed:', e);
     }
-  }
+  });
 
-  frameCounter++;
+  /* ──────────────────────────────────────────────────────────────
+     FIX 65 (v11.0): start scanning med qr-scanner
+     ────────────────────────────────────────────────────────────── */
+  async function startScanning(){
+    clearOutput();
+    setStatus('Starter kamera…');
+    placeholder.style.display = 'none';
+    videoEl.classList.add('active');
 
-  if(code && code.data){ stopCamera(); renderData(parseRaw(code.data)); return; }
-  raf = requestAnimationFrame(scanLoop);
-}
+    /* Stop hvis der allerede kører en scanner */
+    if(qrScanner){
+      try{ qrScanner.destroy(); }catch(e){}
+      qrScanner = null;
+    }
 
-scanBtn.addEventListener('click', async ()=>{
-  clearOutput();
-  cameraWrap.innerHTML='Starter kamera…';
-  cameraWrap.appendChild(torchBtn);
-  cameraWrap.appendChild(scanFrame);
-  cameraWrap.appendChild(engineBadge);
-  cameraWrap.appendChild(focusStatus);
+    try{
+      qrScanner = new QrScanner(
+        videoEl,
+        result => {
+          /* ── FIX 66 (v11.0): result er et objekt med .data og .cornerPoints ── */
+          const data = (result && result.data) ? result.data : String(result || '');
+          if(!data) return;
 
-  await initBarcodeDetector();
-  if(!useNative){ await loadJsQR(); }
+          /* Stop scanning og vis resultat */
+          stopScanning();
+          renderData(parseRaw(data));
+        },
+        {
+          /* ── FIX 67 (v11.0): vigtige options ──
+             - returnDetailedScanResult: bruger ny API med detaljerede resultater
+             - highlightScanRegion: viser overlay med scan-firkant
+             - highlightCodeOutline: tegner grøn outline omkring fundet QR-kode
+             - preferredCamera: bagkamera
+             - maxScansPerSecond: 25 (default) — rigeligt til realtime
+             - calculateScanRegion: vi bruger default (centeret kvadrat på 2/3 af mindste side) */
+          returnDetailedScanResult: true,
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          preferredCamera: 'environment',
+          maxScansPerSecond: 25,
+        }
+      );
 
-  const ok = await startCamera();
-  if(!ok){
-    const demo=`Område: Demo
+      /* ── FIX 68 (v11.0): tillad både normale og inverterede QR-koder
+         (hvid på sort baggrund) — dækker alle realistiske use cases */
+      qrScanner.setInversionMode('both');
+
+      await qrScanner.start();
+
+      /* ── FIX 69 (v11.0): vis decoder-engine i badge'en ── */
+      try{
+        const hasNative = typeof window.BarcodeDetector !== 'undefined';
+        engineBadge.textContent = hasNative ? '⚡ qr-scanner + Native' : 'qr-scanner';
+        engineBadge.classList.add('visible');
+      }catch(e){}
+
+      /* ── FIX 70 (v11.0): vis flash-knap hvis hardwaren understøtter det ── */
+      try{
+        const hasFlash = await qrScanner.hasFlash();
+        if(hasFlash){
+          flashBtn.classList.add('visible');
+        } else {
+          flashBtn.classList.remove('visible');
+        }
+      }catch(e){
+        flashBtn.classList.remove('visible');
+      }
+
+      setStatus(isAndroid
+        ? 'Hold telefonen 15-25 cm fra QR-koden'
+        : 'Klar til scanning');
+      setTimeout(() => setStatus(''), 3000);
+
+    }catch(err){
+      console.error('Scanner start failed:', err);
+      videoEl.classList.remove('active');
+      placeholder.style.display = '';
+      setStatus('Kunne ikke starte kamera');
+
+      /* ── FIX 71 (v11.0): demo-fallback uændret ── */
+      const demo = `Område: Demo
 Varenummer: 12345
 Operatør: DemoBruger
 Antal: 2 KS
@@ -775,13 +413,34 @@ Reol: 01
 Hylde: 02
 Plads: 03
 Kemi: UN1209`;
-    renderData(parseRaw(demo));
-    return;
+      renderData(parseRaw(demo));
+    }
   }
-  scanLoop();
-});
 
-window.addEventListener('beforeunload', stopCamera);
+  function stopScanning(){
+    if(qrScanner){
+      try{ qrScanner.stop(); qrScanner.destroy(); }catch(e){}
+      qrScanner = null;
+    }
+    videoEl.classList.remove('active');
+    placeholder.style.display = '';
+    flashBtn.classList.remove('visible','on');
+    engineBadge.classList.remove('visible');
+    setStatus('');
+  }
+
+  scanBtn.addEventListener('click', startScanning);
+  window.addEventListener('beforeunload', stopScanning);
+
+  /* ──────────────────────────────────────────────────────────────
+     FIX 72 (v11.0): tjek om kamera findes, vis fejlbesked hvis ikke
+     ────────────────────────────────────────────────────────────── */
+  QrScanner.hasCamera().then(hasCamera => {
+    if(!hasCamera){
+      placeholder.textContent = 'Intet kamera fundet';
+    }
+  }).catch(()=>{});
 </script>
+
 </body>
 </html>
