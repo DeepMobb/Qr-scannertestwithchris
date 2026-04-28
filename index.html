@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Info Scan — v10.7</title>
+<title>Info Scan — v10.8</title>
 <style>
   :root{
     --rw-red:#D20014;
@@ -21,7 +21,7 @@
   .card{ background:#fff; border-radius:12px; padding:14px; margin-bottom:14px; }
   #cameraWrap{ height:260px; border-radius:10px; background:#f3f4f6; display:flex; align-items:center; justify-content:center; color:#9ca3af; overflow:hidden; position:relative; }
   #cameraWrap video{ width:100%; height:100%; object-fit:cover; transform:none !important; -webkit-transform:none !important; }
-  /* ── FIX 8 (v10.7): scan-overlay til at guide brugeren ── */
+  #cameraWrap img{ width:100%; height:100%; object-fit:contain; background:#000; }
   #scanFrame{
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     width:60%; aspect-ratio:1/1; border:3px solid rgba(255,255,255,0.85);
@@ -29,7 +29,6 @@
     pointer-events:none; display:none;
   }
   #scanFrame.active{ display:block; }
-  /* ── FIX 9 (v10.7): torch-knap (lommelygte) ── */
   #torchBtn{
     position:absolute; top:8px; right:8px; width:42px; height:42px;
     border-radius:50%; border:0; background:rgba(0,0,0,0.55); color:#fff;
@@ -38,6 +37,8 @@
   #torchBtn.visible{ display:block; }
   #torchBtn.on{ background:rgba(255,200,0,0.9); color:#000; }
   .btn{ width:100%; height:56px; margin-top:14px; border-radius:10px; border:0; background:#0f172a; color:#fff; font-weight:900; font-size:18px; cursor:pointer; }
+  /* ── FIX 16 (v10.8): sekundær knap-stil til "Live scan"-fallback ── */
+  .btn-secondary{ width:100%; height:46px; margin-top:8px; border-radius:10px; border:2px solid #0f172a; background:#fff; color:#0f172a; font-weight:700; font-size:14px; cursor:pointer; }
   .box{ border:2px solid var(--black); border-radius:6px; padding:10px 12px; margin-bottom:12px; background:white; }
   .catTitle{ font-size:17px; font-weight:900; margin-bottom:8px; }
   .boxValue{ font-family: ui-monospace, monospace; font-size:16px; white-space:pre-wrap; }
@@ -47,13 +48,16 @@
   .kemiRow{ display:flex; justify-content:space-between; align-items:center; }
   .hazard{ width:34px; height:34px; }
   #copyBtn{ width:100%; height:50px; margin-top:12px; border-radius:10px; border:2px solid #ddd; background:white; font-weight:900; font-size:16px; cursor:pointer; }
+  /* ── FIX 17 (v10.8): status-meddelelse til feedback ── */
+  #status{ font-size:13px; color:#6b7280; margin-top:8px; min-height:18px; text-align:center; }
+  #status.error{ color:#b91c1c; font-weight:700; }
   @media (max-width:700px){ .logo{ height:56px; } .topTitle{ font-size:18px; } }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topTitle">Info Scan — v10.7</div>
+  <div class="topTitle">Info Scan — v10.8</div>
   <img class="logo" src="logo.png" alt="ROCKWOOL logo" onerror="this.style.display='none'"/>
 </div>
 
@@ -65,6 +69,11 @@
     <div id="scanFrame"></div>
   </div>
   <button id="scanBtn" class="btn">NY SCANNING</button>
+  <!-- ── FIX 18 (v10.8): skjult file input til native kamera capture ── -->
+  <input type="file" id="cameraFile" accept="image/*" capture="environment" style="display:none"/>
+  <!-- ── FIX 19 (v10.8): fallback-knap til live scanning, kun synlig på Android ── -->
+  <button id="liveBtn" class="btn-secondary" style="display:none">Brug live scanning i stedet</button>
+  <div id="status"></div>
 </div>
 
 <div class="card" style="position:relative;">
@@ -75,11 +84,14 @@
 
 <script>
 const scanBtn = document.getElementById('scanBtn');
+const liveBtn = document.getElementById('liveBtn');
+const cameraFile = document.getElementById('cameraFile');
 const output  = document.getElementById('output');
 const copyBtn = document.getElementById('copyBtn');
 const cameraWrap = document.getElementById('cameraWrap');
 const scanFrame = document.getElementById('scanFrame');
 const torchBtn = document.getElementById('torchBtn');
+const statusEl = document.getElementById('status');
 
 let videoEl = null;
 let canvas = null;
@@ -90,8 +102,18 @@ let focusInterval = null;
 let currentTrack = null;
 let torchOn = false;
 
-/* ── FIX 3 (v10.6): Android-detektion ── */
 const isAndroid = /Android/i.test(navigator.userAgent);
+
+/* ── FIX 20 (v10.8): på Android viser vi "Brug live scanning" som fallback-mulighed ── */
+if(isAndroid){
+  liveBtn.style.display = 'block';
+  scanBtn.textContent = 'TAG BILLEDE AF QR-KODE';
+}
+
+function setStatus(msg, isError){
+  statusEl.textContent = msg || '';
+  statusEl.classList.toggle('error', !!isError);
+}
 
 function esc(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
 function classifyWeight(kg){
@@ -266,7 +288,6 @@ function loadJsQR(){
   });
 }
 
-/* ── FIX 4 (v10.6): tap-to-focus til Android ── */
 function attachTapToFocus(track){
   if(!videoEl || !track) return;
   videoEl.addEventListener('click', async () => {
@@ -284,7 +305,6 @@ function attachTapToFocus(track){
   });
 }
 
-/* ── FIX 10 (v10.7): torch toggle ── */
 async function toggleTorch(){
   if(!currentTrack) return;
   try{
@@ -298,12 +318,92 @@ async function toggleTorch(){
 }
 torchBtn.addEventListener('click', toggleTorch);
 
+/* ──────────────────────────────────────────────────────────────
+   FIX 21 (v10.8): NATIVE KAMERA CAPTURE - PRIMÆR METODE PÅ ANDROID
+   Bruger <input capture="environment"> → åbner OS'ets kamera-app
+   som har fuld autofokus, makro, tap-to-focus, HDR osv.
+   Brugeren tager ét billede, og vi analyserer det med jsQR.
+   ────────────────────────────────────────────────────────────── */
+async function decodeImageFile(file){
+  if(!canvas){ canvas = document.createElement('canvas'); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try{
+        /* Vis preview af det tagne billede */
+        cameraWrap.innerHTML = '';
+        const previewImg = document.createElement('img');
+        previewImg.src = url;
+        cameraWrap.appendChild(previewImg);
+
+        /* ── FIX 22 (v10.8): tegn på canvas i fuld opløsning og forsøg decode i flere skalaer ── */
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+
+        let code = null;
+        const fullData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        try{ code = jsQR(fullData.data, fullData.width, fullData.height, { inversionAttempts:'attemptBoth' }); }
+        catch(e){}
+
+        /* Fallback: nedskalér og prøv igen — hjælper på meget store/skæve billeder */
+        if(!code){
+          const scaleSizes = [1280, 800];
+          for(const targetW of scaleSizes){
+            if(canvas.width <= targetW) continue;
+            const ratio = targetW / canvas.width;
+            const sw = Math.round(canvas.width * ratio);
+            const sh = Math.round(canvas.height * ratio);
+            const tmp = document.createElement('canvas');
+            tmp.width = sw; tmp.height = sh;
+            const tctx = tmp.getContext('2d', { willReadFrequently: true });
+            tctx.drawImage(canvas, 0, 0, sw, sh);
+            const sData = tctx.getImageData(0, 0, sw, sh);
+            try{
+              code = jsQR(sData.data, sw, sh, { inversionAttempts:'attemptBoth' });
+              if(code) break;
+            }catch(e){}
+          }
+        }
+
+        URL.revokeObjectURL(url);
+        if(code && code.data) resolve(code.data);
+        else reject(new Error('Ingen QR-kode fundet i billedet'));
+      }catch(err){
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Kunne ikke indlæse billede')); };
+    img.src = url;
+  });
+}
+
+cameraFile.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ''; /* så samme fil kan vælges igen */
+  if(!file) return;
+  setStatus('Analyserer billede…');
+  await loadJsQR();
+  try{
+    const data = await decodeImageFile(file);
+    setStatus('');
+    renderData(parseRaw(data));
+  }catch(err){
+    setStatus('Ingen QR-kode fundet — prøv igen, hold telefonen lige over koden og tryk på koden i kamera-appen for at fokusere.', true);
+  }
+});
+
+/* ──────────────────────────────────────────────────────────────
+   LIVE SCANNING (uændret fra v10.7) - bruges på iOS som default
+   og som fallback på Android via "Brug live scanning"-knappen
+   ────────────────────────────────────────────────────────────── */
 async function startCamera(){
   clearOutput();
   if(!videoEl){ videoEl = document.createElement('video'); videoEl.setAttribute('playsinline','true'); }
   if(!canvas){ canvas = document.createElement('canvas'); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
 
-  /* ── FIX 5 (v10.6): højere opløsning på Android ── */
   const constraints = {
     video: {
       facingMode: { ideal: "environment" },
@@ -322,15 +422,13 @@ async function startCamera(){
 
     if(caps.focusMode && caps.focusMode.includes('continuous')) adv.push({ focusMode:'continuous' });
 
-    /* ── FIX 11 (v10.7): aggressiv zoom på Android — fysisk forstørrelse er bedre end pixel-zoom ── */
     if(caps.zoom){
       const targetZoom = isAndroid
-        ? Math.min(2.0, caps.zoom.max || 1)   /* 2x på Android — tvinger brugeren længere væk, hvor fokus virker */
-        : Math.min(1.2, caps.zoom.max || 1);  /* lille zoom på iOS — uændret adfærd */
+        ? Math.min(2.0, caps.zoom.max || 1)
+        : Math.min(1.2, caps.zoom.max || 1);
       adv.push({ zoom: targetZoom });
     }
 
-    /* ── FIX 6 (v10.6): tæt fokus + auto-eksponering kun på Android ── */
     if(isAndroid){
       if(caps.focusDistance){
         adv.push({ focusDistance: Math.max(caps.focusDistance.min || 0.1, 0.1) });
@@ -345,11 +443,9 @@ async function startCamera(){
 
     if(adv.length) track.applyConstraints({ advanced: adv }).catch(()=>{});
 
-    /* ── FIX 12 (v10.7): vis torch-knap hvis hardwaren understøtter det ── */
     if(caps.torch){ torchBtn.classList.add('visible'); }
     else { torchBtn.classList.remove('visible'); }
 
-    /* ── FIX 7 (v10.6): tap-to-focus kun på Android ── */
     if(isAndroid) attachTapToFocus(track);
 
     focusInterval = setInterval(()=>{
@@ -362,7 +458,7 @@ async function startCamera(){
     cameraWrap.appendChild(videoEl);
     cameraWrap.appendChild(torchBtn);
     cameraWrap.appendChild(scanFrame);
-    scanFrame.classList.add('active'); /* ── FIX 13 (v10.7): vis scan-rammen ── */
+    scanFrame.classList.add('active');
     return true;
   }catch(err){
     console.warn('Camera start failed:', err);
@@ -370,7 +466,6 @@ async function startCamera(){
   }
 }
 
-/* ── FIX 1: rettet catch(e) syntaksfejl ── */
 function stopCamera(){
   if(raf) cancelAnimationFrame(raf);
   raf = null;
@@ -386,7 +481,6 @@ function stopCamera(){
   if(focusInterval){ clearInterval(focusInterval); focusInterval=null; }
 }
 
-/* ── FIX 14 (v10.7): hjælpefunktion — analyser kun centrum af billedet ── */
 function tryDecode(imageData){
   if(!window.jsQR) return null;
   try{ return jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts:'attemptBoth' }); }
@@ -403,22 +497,15 @@ async function scanLoop(){
   }
 
   if(canvas.width !== videoEl.videoWidth){ canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight; }
-
-  /* ── FIX 2: fjernet ctx.filter — crasher stille på Samsung Chrome ── */
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
 
   let code = null;
-
-  /* ── FIX 15 (v10.7): to-trins decode — først centrum (hurtigt + præcist), så hele billedet ── */
   try{
-    /* Trin 1: kun centrum-firkant (matcher scan-rammen, 60% af mindste side) */
     const side = Math.min(canvas.width, canvas.height) * 0.6;
     const cx = (canvas.width - side) / 2;
     const cy = (canvas.height - side) / 2;
     const centerImg = ctx.getImageData(cx, cy, side, side);
     code = tryDecode(centerImg);
-
-    /* Trin 2: hele billedet, hvis centrum fejlede */
     if(!code){
       const fullImg = ctx.getImageData(0, 0, canvas.width, canvas.height);
       code = tryDecode(fullImg);
@@ -432,8 +519,19 @@ async function scanLoop(){
   raf = requestAnimationFrame(scanLoop);
 }
 
+/* ── FIX 23 (v10.8): primær knap-handler — Android går til native capture, iOS til live scan ── */
 scanBtn.addEventListener('click', async ()=>{
   clearOutput();
+  setStatus('');
+  stopCamera();
+
+  if(isAndroid){
+    /* Native kamera-app — fuld autofokus, makro osv. */
+    cameraFile.click();
+    return;
+  }
+
+  /* iOS / desktop: live scanning som før */
   cameraWrap.innerHTML='Starter kamera…';
   cameraWrap.appendChild(torchBtn);
   cameraWrap.appendChild(scanFrame);
@@ -458,6 +556,23 @@ Hylde: 02
 Plads: 03
 Kemi: UN1209`;
     renderData(parseRaw(demo));
+    return;
+  }
+  scanLoop();
+});
+
+/* ── FIX 24 (v10.8): fallback-knap — tvinger live scanning på Android ── */
+liveBtn.addEventListener('click', async () => {
+  clearOutput();
+  setStatus('');
+  stopCamera();
+  cameraWrap.innerHTML='Starter kamera…';
+  cameraWrap.appendChild(torchBtn);
+  cameraWrap.appendChild(scanFrame);
+  await loadJsQR();
+  const ok = await startCamera();
+  if(!ok){
+    setStatus('Kunne ikke starte kamera', true);
     return;
   }
   scanLoop();
