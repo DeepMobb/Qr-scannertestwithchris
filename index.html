@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Info Scan — v11.0</title>
+<title>Info Scan — v11.2</title>
 <style>
   :root{
     --rw-red:#D20014;
@@ -77,7 +77,7 @@
 <body>
 
 <div class="topbar">
-  <div class="topTitle">Info Scan — v11.0</div>
+  <div class="topTitle">Info Scan — v11.2</div>
   <img class="logo" src="logo.png" alt="ROCKWOOL logo" onerror="this.style.display='none'"/>
 </div>
 
@@ -141,23 +141,101 @@
   function enableCopy(enable){ copyBtn.disabled = !enable; }
   function clearOutput(){ output.innerHTML = ''; enableCopy(false); }
 
+  /* ──────────────────────────────────────────────────────────────
+     FIX 74 (v11.2): Understøttelse af kompakt QR-format
+     QR-koder kan nu være enten i det gamle lange format (fx "Område: Produktion")
+     eller i det nye korte format (fx "O:Produktion"). Vi mapper kompakte
+     nøgler til de lange navne så resten af UI'et fungerer uændret.
+     ────────────────────────────────────────────────────────────── */
+  const COMPACT_KEY_MAP = {
+    'O':  'Område',
+    'VN': 'Varenummer',
+    'MA': 'Materiale',
+    'OP': 'Operatør',
+    'A':  'Antal',
+    'L':  'Længde',
+    'B':  'Bredde',
+    'T':  'Tykkelse',
+    'V':  'Vægt',
+    'M':  'Meter',
+    'A2': 'Areal i m²',
+    'AI': 'Anden info',
+    'LO': 'Lager/Område',
+    'RE': 'Reol',
+    'HY': 'Hylde',
+    'PL': 'Plads',
+    'KE': 'Kemi'
+  };
+
+  /* ── FIX 75 (v11.2): enheder der automatisk tilføjes når kompakt format mangler dem ── */
+  const UNIT_FOR_KEY = {
+    'Længde':    'mm',
+    'Bredde':    'mm',
+    'Tykkelse':  'mm',
+    'Vægt':      'kg',
+    'Meter':     'm',
+    'Areal i m²':'m²'
+  };
+
+  /* ── FIX 76 (v11.2): normaliser nøgle og værdi
+     - Mapper korte præfikser til lange navne
+     - Tilføjer enheder automatisk hvis værdien kun er et tal (kompakt format)
+     - Tilføjer "UN"-præfiks automatisk til Kemi hvis værdien starter med tal
+     Returnerer { key, value } eller null hvis ukendt nøgle */
+  function normalizeKeyValue(rawKey, rawValue){
+    const trimmedKey = String(rawKey || '').trim();
+    const trimmedVal = String(rawValue || '').trim();
+    if(!trimmedKey) return null;
+
+    /* Tjek først om det er en kompakt nøgle (case-sensitive — A vs a betyder noget) */
+    let longKey = COMPACT_KEY_MAP[trimmedKey];
+    let isCompact = !!longKey;
+
+    /* Hvis ikke kompakt: behold den som langt format
+       Bemærk: "Længde i meter" mappes stadig til "Meter" som i den gamle parser */
+    if(!longKey){
+      longKey = (trimmedKey === 'Længde i meter') ? 'Meter' : trimmedKey;
+    }
+
+    let value = trimmedVal;
+
+    /* Hvis kompakt format og værdien er rent numerisk, tilføj enhed */
+    if(isCompact && UNIT_FOR_KEY[longKey] && /^[\d.,]+$/.test(value)){
+      value = `${value} ${UNIT_FOR_KEY[longKey]}`;
+    }
+
+    /* Kemi i kompakt format: "1209" → "UN1209" så hazard-symbol-detektion virker */
+    if(isCompact && longKey === 'Kemi' && /^\d+$/.test(value)){
+      value = `UN${value}`;
+    }
+
+    return { key: longKey, value: value, isCompact: isCompact };
+  }
+
   function parseRaw(raw){
     const lines = String(raw||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
     const data = {};
     let collecting=false;
     let andenArr=[];
-    const known = ['Område','Varenummer','Operatør','Antal','Længde','Bredde','Tykkelse','Vægt',
-                   'Længde i meter','Meter','Areal i m²','Anden info','Lagerplads','Lager/Område','Reol','Hylde','Plads','Kemi'];
+    /* ── FIX 77 (v11.2): "kendte" nøgler omfatter nu BÅDE lange og korte præfikser
+       Bruges til at afgøre hvornår "Anden info"-blokken slutter ── */
+    const knownLong = ['Område','Varenummer','Materiale','Operatør','Antal','Længde','Bredde','Tykkelse','Vægt',
+                       'Længde i meter','Meter','Areal i m²','Anden info','Lagerplads','Lager/Område','Reol','Hylde','Plads','Kemi'];
+    const knownCompact = Object.keys(COMPACT_KEY_MAP);
+    const known = [...knownLong, ...knownCompact];
+
     for(let i=0;i<lines.length;i++){
       const line = lines[i];
-      if(/^Anden info/i.test(line)){
+
+      /* "Anden info"-detektion virker for både "Anden info:" og "AI:" */
+      if(/^(Anden info|AI)\s*:/i.test(line)){
         collecting = true;
-        const parts=line.split(':');
+        const parts = line.split(':');
         if(parts.length>1) andenArr.push(parts.slice(1).join(':').trim());
         continue;
       }
       if(collecting){
-        if(/^[A-Za-zÆØÅæøå].*?:/.test(line)){
+        if(/^[A-Za-zÆØÅæøå0-9].*?:/.test(line)){
           const maybeKey = line.split(':')[0].trim();
           if(known.includes(maybeKey)){ collecting = false; i--; continue; }
         }
@@ -165,13 +243,12 @@
         continue;
       }
       if(line.includes(':')){
-        const parts=line.split(':');
-        const key = parts[0].trim();
-        const value = parts.slice(1).join(':').trim();
-        if(key === 'Længde i meter'){
-          data['Meter'] = value;
-        } else {
-          data[key] = value;
+        const parts = line.split(':');
+        const rawKey = parts[0].trim();
+        const rawValue = parts.slice(1).join(':').trim();
+        const norm = normalizeKeyValue(rawKey, rawValue);
+        if(norm){
+          data[norm.key] = norm.value;
         }
       } else {
         const lastKey = Object.keys(data).slice(-1)[0];
@@ -209,6 +286,8 @@
     const boxes = [
       {title:'Område', keys:['Område']},
       {title:'Varenummer', keys:['Varenummer']},
+      /* ── FIX 78 (v11.2): ny "Materiale"-boks fra kompakt format MA: ── */
+      {title:'Materiale', keys:['Materiale']},
       {title:'Operatør', keys:['Operatør']},
       {title:'Antal', keys:['Antal']},
       {title:'Mål', keys:['Længde','Bredde','Tykkelse']},
@@ -295,11 +374,11 @@
   });
 
   /* ──────────────────────────────────────────────────────────────
-     FIX 63 (v11.0): qr-scanner workerPath
-     Biblioteket loader sin worker dynamisk — vi peger den eksplicit
-     til CDN'en så den finder den korrekt.
+     FIX 73 (v11.1): WORKER_PATH er fjernet
+     Den nyere qr-scanner (1.4.2) loader workeren automatisk via
+     dynamic import. Ved at sætte WORKER_PATH manuelt brød vi
+     biblioteket. Console-warning bekræftede det.
      ────────────────────────────────────────────────────────────── */
-  QrScanner.WORKER_PATH = 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner-worker.min.js';
 
   /* ──────────────────────────────────────────────────────────────
      FIX 64 (v11.0): flash-knap håndteret af qr-scanner
@@ -395,24 +474,25 @@
       placeholder.style.display = '';
       setStatus('Kunne ikke starte kamera');
 
-      /* ── FIX 71 (v11.0): demo-fallback uændret ── */
-      const demo = `Område: Demo
-Varenummer: 12345
-Operatør: DemoBruger
-Antal: 2 KS
-Længde: 1000 mm
-Bredde: 600 mm
-Tykkelse: 10 mm
-Vægt: 18 kg
-Længde i meter: 5 M
-Areal i m²: 2 m²
-Anden info: Test linje1
+      /* ── FIX 79 (v11.2): demo bruger nu det nye kompakte format så vi tester parseren ── */
+      const demo = `O:Produktion
+VN:12345678
+MA:Stenuld
+OP:Chris
+A:10 PL pPL
+L:1200
+B:600
+T:50
+V:8.5
+M:4.2
+A2:2.88
+AI:Test linje1
 Test linje2
-Lager/Område: sym01
-Reol: 01
-Hylde: 02
-Plads: 03
-Kemi: UN1209`;
+LO:Hal 3
+RE:R5
+HY:H2
+PL:P1
+KE:1209`;
       renderData(parseRaw(demo));
     }
   }
